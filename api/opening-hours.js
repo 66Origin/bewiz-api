@@ -1,4 +1,23 @@
 export default async function handler(req, res) {
+  const allowedOrigins = [
+    "https://www.bewiz.fr",
+    "https://bewiz.fr",
+    "https://bewiz.webflow.io",
+  ];
+
+  const origin = req.headers.origin;
+
+  if (origin && allowedOrigins.includes(origin)) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+  }
+
+  res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+
+  if (req.method === "OPTIONS") {
+    return res.status(204).end();
+  }
+
   if (req.method !== "GET") {
     return res.status(405).json({
       error: "Method not allowed",
@@ -9,8 +28,10 @@ export default async function handler(req, res) {
   const placeId = process.env.BEWIZ_PLACE_ID;
 
   if (!apiKey || !placeId) {
+    console.error("Missing Google Places configuration");
+
     return res.status(500).json({
-      error: "Missing server configuration",
+      error: "Server configuration error",
     });
   }
 
@@ -26,22 +47,30 @@ export default async function handler(req, res) {
     );
 
     if (!response.ok) {
-      const error = await response.text();
+      const googleError = await response.text();
 
-      console.error("Google Places error:", error);
+      console.error(
+        `Google Places API error (${response.status}):`,
+        googleError,
+      );
 
-      return res.status(response.status).json({
+      return res.status(502).json({
         error: "Unable to fetch opening hours",
       });
     }
 
     const data = await response.json();
 
+    res.setHeader(
+      "Cache-Control",
+      "public, s-maxage=1800, stale-while-revalidate=3600",
+    );
+
     return res.status(200).json({
       currentOpeningHours: data.currentOpeningHours ?? null,
     });
   } catch (error) {
-    console.error(error);
+    console.error("Opening hours error:", error);
 
     return res.status(500).json({
       error: "Internal server error",
